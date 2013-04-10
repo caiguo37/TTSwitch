@@ -7,8 +7,10 @@
 //
 
 #import "TTSwitch.h"
+#import "UIImage+imageColor.h"
 
 #import <QuartzCore/QuartzCore.h>
+#import <CoreGraphics/CoreGraphics.h>
 
 static const CGFloat kTTSwitchAnimationDuration = 0.25;
 
@@ -18,15 +20,14 @@ static const CGFloat kTTSwitchAnimationDuration = 0.25;
 @property (nonatomic, strong) UIImageView *overlayImageView;
 @property (nonatomic, strong) UIImageView *thumbImageView;
 
+@property (nonatomic, strong) UIImageView *onImageView, *offImageView;
+
 @property (nonatomic, strong) UIView *maskedTrackView;
 @property (nonatomic, strong) UIView *maskedThumbView;
 
 @property (nonatomic, strong) CALayer *trackMaskLayer;
 @property (nonatomic, strong) UIImage *onTrackMaskImage;
 @property (nonatomic, strong) UIImage *offTrackMaskImage;
-
-@property (nonatomic, strong, readwrite) UILabel *onLabel;
-@property (nonatomic, strong, readwrite) UILabel *offLabel;
 
 /**
  A Boolean value that determines the off/on state of the switch.
@@ -89,31 +90,10 @@ static const CGFloat kTTSwitchAnimationDuration = 0.25;
     UITapGestureRecognizer *tapGestureRecognizer = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTapGesture:)];
     [self addGestureRecognizer:tapGestureRecognizer];
     
-    self.clipsToBounds = NO;
+    self.clipsToBounds = YES;
+    self.layer.cornerRadius = 12;
     self.layer.rasterizationScale = [[UIScreen mainScreen] scale];
     self.layer.shouldRasterize = YES;
-}
-
-#pragma mark - UIView
-
-- (void)layoutSubviews
-{
-    [super layoutSubviews];
-
-    if (self.onString.length > 0) {
-        [self.onLabel sizeToFit];
-        self.onLabel.frame = CGRectIntegral((CGRect){
-            { self.labelsEdgeInsets.left, self.labelsEdgeInsets.top },
-            { self.onLabel.bounds.size.width, self.trackImage.size.height - self.labelsEdgeInsets.top - self.labelsEdgeInsets.bottom }
-        });
-    }
-    if (self.offString.length > 0) {
-        [self.offLabel sizeToFit];
-        self.offLabel.frame = CGRectIntegral((CGRect){
-            { self.trackImage.size.width - self.labelsEdgeInsets.right - self.offLabel.bounds.size.width, self.labelsEdgeInsets.top },
-            { self.offLabel.bounds.size.width, self.trackImage.size.height - self.labelsEdgeInsets.top - self.labelsEdgeInsets.bottom }
-        });
-    }
 }
 
 #pragma mark - Public interface
@@ -123,7 +103,11 @@ static const CGFloat kTTSwitchAnimationDuration = 0.25;
     if (_trackImage != trackImage) {
         _trackImage = trackImage;
         [_trackImageView setImage:_trackImage];
-        [_trackImageView setFrame:(CGRect){ CGPointZero, _trackImage.size }];
+        if (_trackImage.size.width > 1) {
+            [_trackImageView setFrame:(CGRect){ CGPointZero, _trackImage.size }];
+        } else {
+            [_trackImageView setFrame:(CGRect){ CGPointZero, CGSizeMake(self.frame.size.width*2, self.frame.size.height) }];
+        }
     }
 }
 
@@ -192,44 +176,30 @@ static const CGFloat kTTSwitchAnimationDuration = 0.25;
 - (void)setMaskInLockPosition:(NSNumber *)maskInLockPosition
 {
     if (_maskInLockPosition == maskInLockPosition) return;
-
+    
     _maskInLockPosition = maskInLockPosition;
     [self standardMask];
     [self updateThumbPositionAnimated:NO];
 }
 
-- (void)setOnString:(NSString *)onString
+- (void)setOnImage:(UIImage *)onImage
 {
-    _onString = [onString copy];
-    self.onLabel.text = _onString;
-    [self.trackImageView addSubview:self.onLabel];
+    _onImage = onImage;
+    self.onImageView = [[UIImageView alloc] initWithImage:_onImage];
+    self.onImageView.frame = CGRectMake(0, 0, _onImage.size.width, _onImage.size.height);
+    self.onImageView.center = CGPointMake(5 + _onImage.size.width / 2, self.centerY);
+    [self addSubview:self.onImageView];
+    self.onImageView.hidden = YES;
 }
 
-- (void)setOffString:(NSString *)offString
+- (void)setOffImage:(UIImage *)offImage
 {
-    _offString = [offString copy];
-    self.offLabel.text = _offString;
-    [self.trackImageView addSubview:self.offLabel];
-}
-
-- (UILabel *)onLabel
-{
-    if (!_onLabel) {
-        _onLabel = [[UILabel alloc] initWithFrame:CGRectZero];
-        _onLabel.textAlignment = NSTextAlignmentLeft;
-        _onLabel.backgroundColor = [UIColor clearColor];
-    }
-    return _onLabel;
-}
-
-- (UILabel *)offLabel
-{
-    if (!_offLabel) {
-        _offLabel = [[UILabel alloc] initWithFrame:CGRectZero];
-        _offLabel.textAlignment = NSTextAlignmentRight;
-        _offLabel.backgroundColor = [UIColor clearColor];
-    }
-    return _offLabel;
+    _offImage = offImage;
+    self.offImageView = [[UIImageView alloc] initWithImage:_offImage];
+    self.offImageView.frame = CGRectMake(0, 0, _offImage.size.width, _offImage.size.height);
+    self.offImageView.center = CGPointMake(self.right - 5 - _offImage.size.width / 2, self.centerY);
+    [self addSubview:self.offImageView];
+    self.offImageView.hidden = YES;
 }
 
 - (void)setOn:(BOOL)on
@@ -263,6 +233,18 @@ static const CGFloat kTTSwitchAnimationDuration = 0.25;
 
 #pragma mark - Helpers
 
+- (UIColor *)colorForPosition
+{
+    CGFloat onRed = 0.0, onGreen = 0.0, onBlue = 0.0;
+    [self.onColor getRed:&onRed green:&onGreen blue:&onBlue alpha:NULL];
+    
+    CGFloat offRed = 0.0, offGreen = 0.0, offBlue = 0.0;
+    [self.offColor getRed:&offRed green:&offGreen blue:&offBlue alpha:NULL];
+    
+    UIColor *color = [UIColor colorWithRed:(onRed + (1 - [self valueAtThumbPosition]) * (offRed-onRed)) green:(onGreen + (1 - [self valueAtThumbPosition]) * (offGreen-onGreen)) blue:(onBlue + (1 - [self valueAtThumbPosition]) * (offBlue-onBlue)) alpha:1];
+    return color;
+}
+
 - (CGFloat)valueAtThumbPosition
 {
     CGFloat range = self.frame.size.width - 2 * self.thumbInsetX - self.thumbImageView.frame.size.width;
@@ -278,10 +260,15 @@ static const CGFloat kTTSwitchAnimationDuration = 0.25;
 
 - (void)updateThumbPositionAnimated:(BOOL)animated
 {
-    CGFloat newThumbXCenter = floorf((self.thumbImageView.frame.size.width / 2) + self.thumbInsetX);
+    CGFloat newThumbXCenter = floorf((self.thumbImageView.frame.size.width / 2) + self.thumbInsetX) + 1;
     if (_on) {
         CGFloat range = floorf(self.frame.size.width - 2 * self.thumbInsetX - self.thumbImageView.frame.size.width);
         newThumbXCenter += range;
+        self.onImageView.hidden = NO;
+        self.offImageView.hidden = YES;
+    } else {
+        self.onImageView.hidden = YES;
+        self.offImageView.hidden = NO;
     }
     
     [self thumbImageHighlighted:NO];
@@ -296,12 +283,40 @@ static const CGFloat kTTSwitchAnimationDuration = 0.25;
         } completion:^(BOOL finished) {
             [self maskInLockPosition];
         }];
+        
+        if (self.isOn) {
+            self.onImageView.transform = CGAffineTransformScale(CGAffineTransformIdentity, 0.1, 0.1);
+            [UIView animateWithDuration: 0.2
+                                  delay: 0.1
+                                options: UIViewAnimationOptionCurveLinear
+                             animations:^{self.onImageView.transform = CGAffineTransformScale(CGAffineTransformIdentity, 1.4, 1.4);}
+                             completion:^(BOOL finished) {
+                                 [UIView animateWithDuration:0.15 animations:^{
+                                     self.onImageView.transform = CGAffineTransformScale(CGAffineTransformIdentity, 1, 1);
+                                 }];
+                             }];
+            
+        } else {
+            self.offImageView.transform = CGAffineTransformScale(CGAffineTransformIdentity, 0.1, 0.1);
+            [UIView animateWithDuration: 0.2
+                                  delay: 0.1
+                                options: (UIViewAnimationOptionCurveLinear | UIViewAnimationOptionAllowUserInteraction)
+                             animations:^{self.offImageView.transform = CGAffineTransformScale(CGAffineTransformIdentity, 1.0, 1.0);}
+                             completion:^(BOOL finished) {
+                                 CABasicAnimation *rotationAnimation = [CABasicAnimation animationWithKeyPath:@"transform.rotation.z"];
+                                 rotationAnimation.toValue = [NSNumber numberWithFloat: M_PI];
+                                 rotationAnimation.duration = 0.3;
+                                 rotationAnimation.cumulative = YES;
+                                 [self.offImageView.layer addAnimation:rotationAnimation forKey:@"rotationAnimation1"];
+                             }];
+        }
     }
     else {
         [self.thumbImageView setCenter:(CGPoint){ newThumbXCenter, self.thumbImageView.center.y }];
         [self.trackImageView setCenter:(CGPoint){ newThumbXCenter, self.trackImageView.center.y }];
         [self maskInLockPosition];
     }
+    self.trackImage = [UIImage imageWithColor:[self colorForPosition]];
 }
 
 - (void)thumbImageHighlighted:(BOOL)highlighted
@@ -322,6 +337,8 @@ static const CGFloat kTTSwitchAnimationDuration = 0.25;
     if ([gesture state] == UIGestureRecognizerStateBegan) {
         [self standardMask];
         [self thumbImageHighlighted:YES];
+        self.onImageView.hidden = YES;
+        self.offImageView.hidden = YES;
     }
     
     if ([gesture state] == UIGestureRecognizerStateBegan || [gesture state] == UIGestureRecognizerStateChanged) {
@@ -340,6 +357,8 @@ static const CGFloat kTTSwitchAnimationDuration = 0.25;
         [self.trackImageView setCenter:(CGPoint){ newX, self.trackImageView.center.y }];
         [gesture setTranslation:CGPointZero inView:[thumbImageView superview]];
         [gesture setTranslation:CGPointZero inView:[self.trackImageView superview]];
+        
+        self.trackImage = [UIImage imageWithColor:[self colorForPosition]];
     }
     else if ([gesture state] == UIGestureRecognizerStateEnded) {
         [self setOn:(0.5f < self.valueAtThumbPosition) animated:YES sendActions:YES];
